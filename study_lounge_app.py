@@ -5,23 +5,27 @@ import os
 
 app = Flask(__name__)
 
-# Use PostgreSQL if DATABASE_URL exists, otherwise fallback to SQLite
-db_url = os.getenv("DATABASE_URL", "sqlite:///study_lounge.db")
+db_url = os.getenv('DATABASE_URL')
 
-# Render provides "postgres://" but SQLAlchemy expects "postgresql://"
+if db_url is None:
+  raise RuntimeError("DATABASE_URL not set")
+
+# Force psycopg2 + SSL
 if db_url.startswith("postgres://"):
-    db_url = db_url.replace("postgres://", "postgresql://", 1)
+    db_url = db_url.replace("postgres://", "postgresql+psycopg2://", 1)
 
-# Force SSL for Postgres on Render
-if "postgresql" in db_url:
-    if "?sslmode=" not in db_url:
-    
-        db_url += "?sslmode=require"
-
+# Configure SQLAlchemy with SSL
 app.config['SQLALCHEMY_DATABASE_URI'] = db_url
+app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {
+    "connect_args": {
+        "sslmode": "require"
+    }
+}
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
 db = SQLAlchemy(app)
+
+
 
 # ----------------- MODELS -----------------
 class Student(db.Model):
