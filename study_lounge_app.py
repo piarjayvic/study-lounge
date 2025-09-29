@@ -1,32 +1,22 @@
-from flask import Flask, render_template_string, request, redirect, url_for
+import os
+from flask import Flask, render_template, request, redirect, url_for, session
 from flask_sqlalchemy import SQLAlchemy
 from datetime import datetime
-import os
 
 app = Flask(__name__)
+app.secret_key = "super-secret-key"  # change for security
 
-db_url = os.getenv('DATABASE_URL')
-
-if db_url and db_url.startswith("postgres://"):
-    # Render / Heroku style URL → convert to psycopg2 format
-    db_url = db_url.replace("postgres://", "postgresql+psycopg2://", 1)
-    app.config['SQLALCHEMY_DATABASE_URI'] = db_url
-    app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {
-        "connect_args": {
-            "sslmode": "require"
-        }
-    }
-else:
-    # Local fallback: SQLite database file
-    app.config['SQLALCHEMY_DATABASE_URI'] = "sqlite:///study_lounge.db"
-
-app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+# Use SQLite (easiest + no SSL errors)
+BASE_DIR = os.path.abspath(os.path.dirname(__file__))
+db_path = os.path.join(BASE_DIR, "study_lounge.db")
+app.config["SQLALCHEMY_DATABASE_URI"] = f"sqlite:///{db_path}"
+app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
 
 db = SQLAlchemy(app)
 
-
-
-# ----------------- MODELS -----------------
+# -------------------
+# Database Models
+# -------------------
 class Student(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String(100), nullable=False)
@@ -35,79 +25,126 @@ class Assignment(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     title = db.Column(db.String(200), nullable=False)
     due_date = db.Column(db.Date, nullable=False)
-    completed = db.Column(db.Boolean, default=False)
 
-    student_id = db.Column(db.Integer, db.ForeignKey('student.id'), nullable=False)
-    student = db.relationship('Student', backref=db.backref('assignments', lazy=True))
+class Event(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    event = db.Column(db.String(200), nullable=False)
+    event_date = db.Column(db.Date, nullable=False)
 
-# Create tables if they don't exist
 with app.app_context():
     db.create_all()
 
-# ----------------- ROUTES -----------------
-@app.route("/")
-def index():
-    students = Student.query.all()
-    return render_template_string("""
-        <h1>Study Lounge</h1>
-        <form method="POST" action="/add_student">
-            <input type="text" name="name" placeholder="Student name" required>
-            <button type="submit">Add Student</button>
-        </form>
-        <ul>
-            {% for student in students %}
-                <li><a href="{{ url_for('student_page', student_id=student.id) }}">{{ student.name }}</a></li>
-            {% endfor %}
-        </ul>
-    """, students=students)
+# -------------------
+# Routes
+# -------------------
+@app.route("/", methods=["GET", "POST"])
+def home():
+    """Login: Student or Staff"""
+    error = None
+    if request.method == "POST":
+        role = request.form.get("role")
+        if role == "student":
+            session["role"] = "student"
+            return redirect(url_for("dashboard"))
+        elif role == "staff":
+            code = request.form.get("code")
+            if code == "admin123":  # change this staff password
+                session["role"] = "staff"
+                return redirect(url_for("dashboard"))
+            else:
+                error = "Invalid staff code!"
+    return render_template("home.html", error=error)
 
+@app.route("/dashboard")
+def dashboard():
+    """Main dashboard"""
+    role = session.get("role")
+    if not role:
+        return redirect(url_for("home"))
+    students = Student.query.all()
+    assignments = Assignment.query.all()
+    events = Event.query.all()
+    return render_template("index.html", role=role,
+                           students=students,
+                           assignments=assignments,
+                           events=events)
+
+@app.route("/logout")
+def logout():
+    """Clear session and go home"""
+    session.clear()
+    return redirect(url_for("home"))
+
+# -------------------
+# Student Management
+# -------------------
 @app.route("/add_student", methods=["POST"])
 def add_student():
-    name = request.form["name"]
-    student = Student(name=name)
-    db.session.add(student)
+    if session.get("role") != "staff":
+        return redirect(url_for("dashboard"))
+    name = request.form.get("name")
+    if name:
+        db.session.add(Student(name=name))
+        db.session.commit()
+    return redirect(url_for("dashboard"))
+
+@app.route("/delete_student/<int:id>")
+def delete_student(id):
+    if session.get("role") != "staff":
+        return redirect(url_for("dashboard"))
+    student = Student.query.get_or_404(id)
+    db.session.delete(student)
     db.session.commit()
-    return redirect(url_for("index"))
+    return redirect(url_for("dashboard"))
 
-@app.route("/student/<int:student_id>")
-def student_page(student_id):
-    student = Student.query.get_or_404(student_id)
-    return render_template_string("""
-        <h1>{{ student.name }}'s Schedule</h1>
-        <form method="POST" action="{{ url_for('add_assignment', student_id=student.id) }}">
-            <input type="text" name="title" placeholder="Assignment title" required>
-            <input type="date" name="due_date" required>
-            <button type="submit">Add Assignment</button>
-        </form>
-        <ul>
-            {% for a in student.assignments %}
-                <li>
-                    <form method="POST" action="{{ url_for('toggle_assignment', assignment_id=a.id) }}">
-                        <input type="checkbox" name="completed" onchange="this.form.submit()" {% if a.completed %}checked{% endif %}>
-                        {{ a.title }} (Due: {{ a.due_date.strftime('%Y-%m-%d') }})
-                    </form>
-                </li>
-            {% endfor %}
-        </ul>
-        <a href="{{ url_for('index') }}">Back</a>
-    """, student=student)
+# -------------------
+# Assignment Management
+# -------------------
+@app.route("/add_assignment", methods=["POST"])
+def add_assignment():
+    if session.get("role") != "staff":
+        return redirect(url_for("dashboard"))
+    title = request.form.get("title")
+    due_date = request.form.get("due_date")
+    if title and due_date:
+        db.session.add(Assignment(title=title, due_date=datetime.strptime(due_date, "%Y-%m-%d")))
+        db.session.commit()
+    return redirect(url_for("dashboard"))
 
-@app.route("/student/<int:student_id>/add_assignment", methods=["POST"])
-def add_assignment(student_id):
-    title = request.form["title"]
-    due_date = datetime.strptime(request.form["due_date"], "%Y-%m-%d").date()
-    assignment = Assignment(title=title, due_date=due_date, student_id=student_id)
-    db.session.add(assignment)
+@app.route("/delete_assignment/<int:id>")
+def delete_assignment(id):
+    if session.get("role") != "staff":
+        return redirect(url_for("dashboard"))
+    assignment = Assignment.query.get_or_404(id)
+    db.session.delete(assignment)
     db.session.commit()
-    return redirect(url_for("student_page", student_id=student_id))
+    return redirect(url_for("dashboard"))
 
-@app.route("/assignment/<int:assignment_id>/toggle", methods=["POST"])
-def toggle_assignment(assignment_id):
-    assignment = Assignment.query.get_or_404(assignment_id)
-    assignment.completed = not assignment.completed
+# -------------------
+# Schedule Management
+# -------------------
+@app.route("/add_event", methods=["POST"])
+def add_event():
+    if session.get("role") != "staff":
+        return redirect(url_for("dashboard"))
+    event = request.form.get("event")
+    event_date = request.form.get("event_date")
+    if event and event_date:
+        db.session.add(Event(event=event, event_date=datetime.strptime(event_date, "%Y-%m-%d")))
+        db.session.commit()
+    return redirect(url_for("dashboard"))
+
+@app.route("/delete_event/<int:id>")
+def delete_event(id):
+    if session.get("role") != "staff":
+        return redirect(url_for("dashboard"))
+    event = Event.query.get_or_404(id)
+    db.session.delete(event)
     db.session.commit()
-    return redirect(url_for("student_page", student_id=assignment.student_id))
+    return redirect(url_for("dashboard"))
 
-# ----------------- MAIN -----------------
+# -------------------
+# Run
+# -------------------
 if __name__ == "__main__":
     app.run(debug=True)
