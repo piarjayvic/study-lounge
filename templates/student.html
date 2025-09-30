@@ -1,0 +1,179 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>{{ student.name }} — Schedule</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+  <style>
+    .calendar th { background:#f8f9fa; }
+    .assignment { margin-top:6px; padding:6px; border-radius:6px; border:1px solid #ddd; font-size:.9rem; }
+    .test { background:#fff3cd; }
+    .homework { background:#e9f7ef; }
+    .completed { opacity:.6; text-decoration:line-through; }
+    td { vertical-align:top; height:120px; }
+  </style>
+</head>
+<body class="bg-light">
+  <div class="container py-4">
+    <div class="d-flex justify-content-between align-items-center mb-3">
+      <div>
+        <h2>{{ student.name }}</h2>
+        <div class="text-muted">{{ student.notes or '' }}</div>
+      </div>
+      <div>
+        <a href="{{ url_for('dashboard') }}" class="btn btn-outline-secondary">⬅ Back</a>
+        <a href="{{ url_for('logout') }}" class="btn btn-outline-danger">Logout</a>
+      </div>
+    </div>
+
+    <div class="mb-3 d-flex gap-3 align-items-center">
+      <form method="get" action="{{ url_for('student_page', student_id=student.id) }}">
+        <label>Month:
+          <select name="month" onchange="this.form.submit()" class="form-select d-inline-block" style="width:180px">
+            {% for m in range(1,13) %}
+              <option value="{{ m }}" {% if m==month %}selected{% endif %}>{{ m }} - {{ months[m-1] }}</option>
+            {% endfor %}
+          </select>
+        </label>
+        <input type="hidden" name="year" value="{{ year }}">
+      </form>
+      <form method="get" action="{{ url_for('student_page', student_id=student.id) }}">
+        <input type="hidden" name="month" value="{{ month }}">
+        <label>Year: <input type="number" name="year" value="{{ year }}" onchange="this.form.submit()" class="form-control d-inline-block" style="width:110px"></label>
+      </form>
+    </div>
+
+    <table class="table calendar mb-3">
+      <thead><tr>{% for d in ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'] %}<th>{{ d }}</th>{% endfor %}</tr></thead>
+      <tbody>
+        {% for week in month_matrix %}
+          <tr>
+            {% for day in week %}
+              {% if day == 0 %}
+                <td></td>
+              {% else %}
+                {% set day_iso = '%04d-%02d-%02d'|format(year, month, day) %}
+                <td>
+                  <div class="fw-bold">{{ day }}</div>
+                  {% for a in assignments_by_date.get(day_iso, []) %}
+                    <div class="assignment {% if a.is_test %}test{% else %}homework{% endif %} {% if a.completed %}completed{% endif %}" id="assign-{{ a.id }}">
+                      <div style="display:flex;gap:8px;align-items:center">
+                        <input type="checkbox" data-id="{{ a.id }}" class="complete-checkbox" {% if a.completed %}checked{% endif %}>
+                        <div style="flex:1">
+                          <strong>{{ a.title }}</strong><br>
+                          <small class="text-muted">{{ 'Test' if a.is_test else 'Homework' }}</small>
+                        </div>
+                        {% if role == 'staff' %}
+                        <form method="POST" action="{{ url_for('delete_assignment', student_id=student.id, assignment_id=a.id) }}" style="margin:0">
+                          <button class="btn btn-sm btn-outline-danger">X</button>
+                        </form>
+                        {% endif %}
+                      </div>
+                    </div>
+                  {% endfor %}
+                </td>
+              {% endif %}
+            {% endfor %}
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+
+    <!-- Add assignment (staff only) -->
+    {% if role == 'staff' %}
+    <div class="card mb-3">
+      <div class="card-body">
+        <h5>Add assignment / test</h5>
+        <form method="POST" action="{{ url_for('add_assignment', student_id=student.id) }}" class="row g-2">
+          <div class="col-md-4"><input name="title" class="form-control" placeholder="Title" required></div>
+          <div class="col-md-3"><input name="due_date" type="date" class="form-control" value="{{ today_iso }}" required></div>
+          <div class="col-md-2">
+            <select name="is_test" class="form-select">
+              <option value="0">Homework</option>
+              <option value="1">Test</option>
+            </select>
+          </div>
+          <div class="col-md-3"><button class="btn btn-success w-100">Add</button></div>
+        </form>
+      </div>
+    </div>
+    {% endif %}
+
+    <!-- Strengths & Weaknesses -->
+    <div class="row">
+      <div class="col-md-6">
+        <div class="card mb-3">
+          <div class="card-header bg-success text-white">Strengths</div>
+          <div class="card-body">
+            <ul class="list-group mb-3">
+              {% for s in strengths %}
+                <li class="list-group-item d-flex justify-content-between align-items-center">
+                  {{ s.subject }}
+                  {% if role == 'staff' %}
+                    <form method="POST" action="{{ url_for('delete_skill', student_id=student.id, skill_id=s.id) }}" style="margin:0">
+                      <button class="btn btn-sm btn-outline-danger">Remove</button>
+                    </form>
+                  {% endif %}
+                </li>
+              {% else %}
+                <li class="list-group-item text-muted">No listed strengths</li>
+              {% endfor %}
+            </ul>
+            {% if role == 'staff' %}
+            <form method="POST" action="{{ url_for('add_skill', student_id=student.id) }}" class="row g-2">
+              <div class="col-7"><input name="subject" class="form-control" placeholder="Subject (e.g. Algebra)" required></div>
+              <div class="col-3">
+                <select name="level" class="form-select">
+                  <option value="strength">Strength</option>
+                  <option value="weakness">Weakness</option>
+                </select>
+              </div>
+              <div class="col-2"><button class="btn btn-primary w-100">Add</button></div>
+            </form>
+            {% endif %}
+          </div>
+        </div>
+      </div>
+      <div class="col-md-6">
+        <div class="card mb-3">
+          <div class="card-header bg-danger text-white">Weaknesses</div>
+          <div class="card-body">
+            <ul class="list-group mb-3">
+              {% for w in weaknesses %}
+                <li class="list-group-item d-flex justify-content-between align-items-center">
+                  {{ w.subject }}
+                  {% if role == 'staff' %}
+                    <form method="POST" action="{{ url_for('delete_skill', student_id=student.id, skill_id=w.id) }}" style="margin:0">
+                      <button class="btn btn-sm btn-outline-danger">Remove</button>
+                    </form>
+                  {% endif %}
+                </li>
+              {% else %}
+                <li class="list-group-item text-muted">No listed weaknesses</li>
+              {% endfor %}
+            </ul>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+<script>
+document.querySelectorAll('.complete-checkbox').forEach(cb => {
+  cb.addEventListener('change', ev => {
+    const id = cb.dataset.id;
+    fetch('/toggle_complete/' + id, {method: 'POST'})
+      .then(r => r.json())
+      .then(data => {
+        if (!data.ok) { alert('Could not update'); cb.checked = !cb.checked; }
+        else {
+          const el = document.getElementById('assign-' + id);
+          if (data.completed) el.classList.add('completed'); else el.classList.remove('completed');
+        }
+      }).catch(()=>{ alert('Network error'); cb.checked = !cb.checked; });
+  });
+});
+</script>
+</body>
+</html>
