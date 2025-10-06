@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Study Calendar</title>
+  <style>
+    body { font-family: Arial, sans-serif; background: #f9f9f9; margin: 0; }
+    header { background: #003366; color: white; text-align: center; padding: 20px 0; }
+    .container { max-width: 900px; margin: 30px auto; background: white; padding: 20px; border-radius: 10px; box-shadow: 0 0 10px rgba(0,0,0,0.1); }
+    table { width: 100%; border-collapse: collapse; }
+    th, td { border: 1px solid #ccc; padding: 10px; text-align: center; }
+    th { background: #003366; color: white; }
+    td { background: #f1f4f8; }
+    a { text-decoration: none; color: #003366; }
+    button { background: #003366; color: white; padding: 8px 12px; border: none; border-radius: 5px; cursor: pointer; }
+    button:hover { background: #0055aa; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Study Lounge Calendar</h1>
+  </header>
+  <div class="container">
+    <table>
+      <tr>
+        <th>Student</th>
+        <th>Assignment</th>
+        <th>Due Date</th>
+      </tr>
+      {% for assignment in assignments %}
+      <tr>
+        <td>{{ assignment.student.name }}</td>
+        <td>{{ assignment.title }}</td>
+        <td>{{ assignment.due_date }}</td>
+      </tr>
+      {% endfor %}
+    </table>
+
+    <a href="/"><button>Back</button></a>
+  </div>
+</body>
+</html>
