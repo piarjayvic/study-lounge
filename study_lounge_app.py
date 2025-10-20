@@ -13,7 +13,8 @@ if not db_url:
 
 # Render uses the old "postgres://" prefix — convert it:
 if db_url.startswith("postgres://"):
-    db_url = db_url.replace("postgres://", "postgresql+psycopg2://", 1)
+    db_url = db_url.replace("postgres://", "postgresql+psycopg://", 1)
+
 
 app.config["SQLALCHEMY_DATABASE_URI"] = db_url
 app.config["SQLALCHEMY_ENGINE_OPTIONS"] = {"connect_args": {"sslmode": "require"}}
